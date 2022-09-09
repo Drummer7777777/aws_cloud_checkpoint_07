@@ -1,0 +1,34 @@
+#!/bin/bash
+if [[ "$(sudo grep '^NAME=' /etc/os-release)" == 'NAME="Ubuntu"' ]]; then
+	echo '___________________apt-get___________________________'
+	sudo apt-get update -y
+	sudo apt-get install unzip -y
+	
+	echo '____________________install cli______________________'
+	curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+	unzip awscliv2.zip
+	sudo ./aws/install
+	
+	echo '_____________________connect to bucket________________'
+	bucket="cec-"$(aws sts get-caller-identity --query Account --output text)"-j2"
+	aws s3 cp s3://$bucket/user-data/checkpoint_07/ubuntu_launch_script2 ./
+	echo '______________________setting and run script___________'
+	sudo chmod +x ./ubuntu_launch_script2
+	sudo ./ubuntu_launch_script2
+else
+	echo '___________________yum-get___________________________'
+	sudo yum update -y
+	sudo yum install unzip -y
+	
+	echo '____________________install cli______________________'
+	curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+	unzip awscliv2.zip
+	sudo ./aws/install
+	
+	echo '_____________________connect to bucket________________'
+	bucket="cec-"$(aws sts get-caller-identity --query Account --output text)"-j2"
+	aws s3 cp s3://$bucket/user-data/checkpoint_07/amazon_launch_script ./
+	echo '______________________setting and run script___________'
+	sudo chmod +x ./amazon_launch_script
+	sudo ./amazon_launch_script
+fi

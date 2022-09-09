@@ -1,0 +1,134 @@
+#!/bin/bash
+
+acc_id="$(aws sts get-caller-identity --query Account --output text)"
+#установка nginx
+sudo apt-get update -y
+sudo apt-get install nginx -y
+sudo systemctl enable nginx
+#настройка sshd_config
+echo '-------------Edit sshd_config------------------'
+#sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config #8
+if [ -z "$(grep "^PermitRootLogin" /etc/ssh/sshd_config)" ]; then
+	echo "PermitRootLogin no" >> /etc/ssh/sshd_config
+else
+	sed -i "s/$(grep "^PermitRootLogin" /etc/ssh/sshd_config)/PermitRootLogin no/" /etc/ssh/sshd_config
+fi
+sudo systemctl reload sshd
+echo '-------------install fail2ban------------------'
+sudo apt-get install fail2ban -y
+sudo systemctl enable fail2ban
+echo '-------------mkdir folder and index.html------------------'
+sudo mkdir var/www/tutorial
+sudo touch var/www/tutorial/index.html
+echo '-------------Edit nginx.conf------------------'
+cat > var/www/tutorial/index.html << EOF
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Hello, Nginx!</title>
+</head>
+<body>
+    <h1>Hello, Nginx!</h1>
+    <p>We have just configured our Nginx web server on Ubuntu Server!</p>
+</body>
+</html>
+EOF
+
+sudo touch etc/nginx/sites-enabled/tutorial
+cat > etc/nginx/sites-enabled/tutorial << EOF
+server {
+       listen 81;
+       listen [::]:81;
+
+       server_name example.ubuntu.com;
+
+       root /var/www/tutorial;
+       index index.html;
+
+       location / {
+               try_files \$uri \$uri/ =404;
+       }
+}
+EOF
+
+echo '-------------Edit nginx.conf------------------'
+sudo systemctl reload nginx
+echo '-------------add tutor-a------------------'
+sudo adduser tutor-a --disabled-password --gecos ""
+sudo usermod -aG sudo tutor-a
+#sed -i 's/sudo ALL=(ALL:ALL) ALL/sudo ALL=(ALL:ALL) NOPASSWD: ALL' /etc/sudoers
+#echo '%sudo ALL=(ALL:ALL) NOPASSWD: ALL' >> /etc/sudoers #61
+sudo sed -i 's/%sudo\tALL=(ALL:ALL) ALL/%sudo\tALL=(ALL:ALL) NOPASSWD: ALL/' /etc/sudoers
+sudo mkdir /home/tutor-a/.ssh
+sudo chmod 700 /home/tutor-a/.ssh
+sudo touch /home/tutor-a/.ssh/authorized_keys
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIChvBKAJbIt0H0O26DbZnu2I0kHG+OJBEvR0UkgqWwFb tutor-a' >> /home/tutor-a/.ssh/authorized_keys
+sudo chmod 600 /home/tutor-a/.ssh/authorized_keys
+sudo chown tutor-a:tutor-a /home/tutor-a/.ssh
+sudo chown tutor-a:tutor-a /home/tutor-a/.ssh/authorized_keys #68
+#sudo apt install make gcc -y
+#cd /usr/local/src/
+#sudo wget http://www.noip.com/client/linux/noip-duc-linux.tar.gz
+#sudo tar xf noip-duc-linux.tar.gz
+#cd /usr/local/src/noip-2.1.9-1/
+#echo '--------------------------------------make install---------------------------'
+#sudo sed -i 's!${BINDIR}/${TGT} -C -c /tmp/no-ip2.conf!#${BINDIR}/${TGT} -C -c /tmp/no-ip2.conf!' /usr/local/src/noip-2.1.9-1/Makefile
+#sudo sed -i 's!mv /tmp/no-ip2.conf ${CONFDIR}/no-ip2.conf!#mv /tmp/no-ip2.conf ${CONFDIR}/no-ip2.conf!' /usr/local/src/noip-2.1.9-1/Makefile
+#sudo make install
+#echo '--------------------------------------copy conf ------------------------------'
+#sudo aws s3 cp s3://cec-438176726335-j2/noip2/ubuntu_no-ip2.conf /usr/local/etc/no-ip2.conf
+#echo '-------------------------------touch service----------------------'
+#sudo touch /etc/systemd/system/noip2.service
+#echo '------------------------------------cat in service----------------------'
+#cat > /etc/systemd/system/noip2.service << EOF
+#[Unit]
+#Description=noip2 service
+#
+#[Service]
+#Type=forking
+#ExecStart=/usr/local/bin/noip2
+#Restart=always
+#
+#[Install]
+#WantedBy=default.target
+#EOF
+echo '___________________SET ROUTE53_________________'
+#region=$(curl http://169.254.169.254/latest/meta-data/placement/region)
+#echo $region
+#aws configure set region $region
+#sudo touch /var/www/test.txt
+#sudo echo $(curl http://169.254.169.254/latest/meta-data/instance-id) >> /var/www/test.txt
+#sudo echo $(curl http://169.254.169.254/latest/meta-data/placement/region) >> /var/www/test.txt
+hostnamectl set-hostname \
+        "$(aws ec2 describe-instances \
+        --instance-ids $(curl http://169.254.169.254/latest/meta-data/instance-id) \
+	--region $(curl http://169.254.169.254/latest/meta-data/placement/region) \
+        --query "Reservations[].Instances[].Tags[?Key=='Name'].Value" \
+        --output text).$acc_id.cirruscloud.click"
+#--region $(curl http://169.254.169.254/latest/meta-data/placement/region) \
+#	--region $(curl http://169.254.169.254/latest/dynamic/instance-identity/document|grep region|awk -F\" '{print$4}') \
+sudo aws s3 cp s3://cec-438176726335-j2/assume_role_and_update_ip.service/assume_role_and_update_ip.service /etc/systemd/system/assume_role_and_update_ip.service
+sudo chmod 664 /etc/systemd/system/assume_role_and_update_ip.service
+sudo aws s3 cp s3://cec-438176726335-j2/assume_role_and_update_ip.service/araui /usr/local/bin/araui
+sudo chmod 777 /usr/local/bin/araui
+#sudo aws s3 cp s3://cec-438176726335-j2/route53/resource_record_set.json /usr/local/bin/resource_record_set.json
+#sudo chmod 777 /usr/local/bin/resource_record_set.json
+#sed -i "s#438176726335.cirruscloud.click#$(echo ${HOSTNAME} | awk -F '.' '{print $1}').438176726335.cirruscloud.click#" /usr/local/bin/resource_record_set.json
+#if [[ "$(sudo grep '^NAME=' /etc/os-release)" == 'NAME="Ubuntu"' ]]; then
+        #sed -i "s#438176726335.cirruscloud.click#$(echo ${HOSTNAME} | awk -F '.' '{print $1}').438176726335.cirruscloud.click#" /usr/local/bin/resource_record_set.json
+#        sed -i "s#438176726335.cirruscloud.click#ubuntu-ud6.438176726335.cirruscloud.click#" /usr/local/bin/resource_record_set.json
+#else
+#        sed -i "s#438176726335.cirruscloud.click#al2-ud6.438176726335.cirruscloud.click#" /usr/local/bin/resource_record_set.json
+#fi
+sudo systemctl daemon-reload
+sudo systemctl enable assume_role_and_update_ip
+#sudo systemctl start noip2
+#hostnamectl set-hostname \
+#	"$(aws ec2 describe-instances \
+#	--region eu-central-1 \
+#	--instance-ids $(curl http://169.254.169.254/latest/meta-data/instance-id) \
+#	--query "Reservations[].Instances[].Tags[?Key=='Name'].Value" \
+#	--output text).$acc_id.cirruscloud.click"
+sudo reboot
+

@@ -1,0 +1,11 @@
+{
+	"Changes": [{
+	"Action": "DELETE",
+			"ResourceRecordSet": {
+				"Name": "ip-172-31-28-7.438176726335.cirruscloud.click.",
+				"Type": "A",
+				"TTL": 300,
+				"ResourceRecords":[{"Value": "142.251.1.101"}]
+			}
+}]
+}

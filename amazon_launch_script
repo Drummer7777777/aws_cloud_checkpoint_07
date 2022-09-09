@@ -1,0 +1,148 @@
+#!/bin/bash
+#установка nginx
+sudo yum update -y
+sudo amazon-linux-extras install epel -y
+sudo yum-config-manager --enable epel
+sudo yum install nginx -y
+sudo systemctl start nginx
+sudo systemctl enable nginx
+#настройка sshd_config
+echo '-------------Edit sshd_config------------------'
+#sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config #8
+if [ -z "$(grep "^PermitRootLogin" /etc/ssh/sshd_config)" ]; then
+	echo "PermitRootLogin no" >> /etc/ssh/sshd_config
+else
+	sed -i "s/$(grep "^PermitRootLogin" /etc/ssh/sshd_config)/PermitRootLogin no/" /etc/ssh/sshd_config
+fi
+sudo systemctl reload sshd
+echo '-------------install fail2ban------------------'
+#sudo amazon-linux-extras install epel -y
+#sudo yum-config-manager --enable epel
+sudo yum install fail2ban -y
+sudo systemctl start fail2ban
+sudo systemctl enable fail2ban
+sudo systemctl start firewalld
+sudo firewall-cmd --zone=public --add-service=http --permanent
+bucket="cec-"$(aws sts get-caller-identity --query Account --output text)"-j2"
+aws s3 cp s3://$bucket/firewalld_services/nginx.xml /etc/firewalld/services/nginx.xml 
+sudo firewall-cmd --reload
+sudo firewall-cmd --zone=public --add-service=nginx --permanent
+sudo firewall-cmd --reload
+echo '-------------mkdir folder and index.html------------------'
+sudo mkdir var/www
+sudo mkdir var/www/tutorial
+sudo touch var/www/tutorial/index.html
+echo '-------------Edit nginx.conf------------------'
+cat > var/www/tutorial/index.html << EOF
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Hello, Nginx!</title>
+</head>
+<body>
+    <h1>Hello, Nginx!</h1>
+    <p>We have just configured our Nginx web server on Ubuntu Server!</p>
+</body>
+</html>
+EOF
+#echo '<!doctype html>
+#<html>
+#<head>
+#    <meta charset="utf-8">
+#    <title>Hello, Nginx!</title>
+#</head>
+#<body>
+#    <h1>Hello, Nginx!</h1>
+#    <p>We have just configured our Nginx web server on Ubuntu Server!</p>
+#</body>
+#</html>' > var/www/tutorial/index.html
+#sudo echo 'include sites-enabled' >> etc/nginx/nginx.conf
+sudo mkdir etc/nginx/sites-enabled
+sudo touch etc/nginx/conf.d/tutorial.conf
+cat > etc/nginx/conf.d/tutorial.conf << EOF
+server {
+       listen 81;
+       listen [::]:81;
+
+       server_name example.ubuntu.com;
+
+       root /var/www/tutorial;
+       index index.html;
+
+       location / {
+               try_files \$uri \$uri/ =404;
+       }
+}
+EOF
+#sudo echo 'server {
+#       listen 81;
+#       listen [::]:81;
+#
+#       server_name example.ubuntu.com;
+#
+#       root /var/www/tutorial;
+#       index index.html;
+#
+#       location / {
+#               try_files $uri $uri/ =404;
+#       }
+#}' > etc/nginx/sites-enabled/tutorial
+
+echo '-------------Edit nginx.conf------------------'
+#sed -i '/http {/a\server {\n
+#    listen 81;\n
+#    location / {\n
+#        root /home/ubuntu/data;\n
+#    }\n
+#}' /etc/nginx/nginx.conf
+#sed '/http {/a server {\n
+#    listen 81;\n
+#    location / {\n
+#        root /home/ubuntu/data;\n
+#    }\nl
+#}' /etc/nginx/nginx.conf
+sudo systemctl reload nginx
+echo '-------------add tutor-a------------------'
+sudo adduser tutor-a
+sudo usermod -aG wheel tutor-a
+#sed -i 's/sudo ALL=(ALL:ALL) ALL/sudo ALL=(ALL:ALL) NOPASSWD: ALL' /etc/sudoers
+#echo '%sudo ALL=(ALL:ALL) NOPASSWD: ALL' >> /etc/sudoers #61
+sudo sed -i 's/%wheel\tALL=(ALL)\tALL/%wheel\tALL=(ALL:ALL)\tNOPASSWD: ALL/' /etc/sudoers
+sudo mkdir /home/tutor-a/.ssh
+sudo chmod 700 /home/tutor-a/.ssh
+sudo touch /home/tutor-a/.ssh/authorized_keys
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIChvBKAJbIt0H0O26DbZnu2I0kHG+OJBEvR0UkgqWwFb tutor-a' >> /home/tutor-a/.ssh/authorized_keys
+sudo chmod 600 /home/tutor-a/.ssh/authorized_keys
+sudo chown tutor-a:tutor-a /home/tutor-a/.ssh
+sudo chown tutor-a:tutor-a /home/tutor-a/.ssh/authorized_keys #68
+acc_id="$(aws sts get-caller-identity --query Account --output text)"
+echo '____________________SET ROUTE53 _____________________'
+hostnamectl set-hostname \
+        "$(aws ec2 describe-instances \
+        --instance-ids $(curl http://169.254.169.254/latest/meta-data/instance-id) \
+	--region $(curl http://169.254.169.254/latest/meta-data/placement/region) \
+        --query "Reservations[].Instances[].Tags[?Key=='Name'].Value" \
+        --output text).$acc_id.cirruscloud.click"
+echo '___________________SET ROUTE53_________________'
+sudo aws s3 cp s3://cec-438176726335-j2/assume_role_and_update_ip.service/assume_role_and_update_ip.service /etc/systemd/system/assume_role_and_update_ip.service
+sudo chmod 664 /etc/systemd/system/assume_role_and_update_ip.service
+sudo aws s3 cp s3://cec-438176726335-j2/assume_role_and_update_ip.service/araui /usr/local/bin/araui
+sudo chmod 777 /usr/local/bin/araui
+sudo aws s3 cp s3://cec-438176726335-j2/route53/resource_record_set.json /usr/local/bin/resource_record_set.json
+sudo chmod 777 /usr/local/bin/resource_record_set.json
+#if [[ "$(sudo grep '^NAME=' /etc/os-release)" == 'NAME="Ubuntu"' ]]; then
+#	#sed -i "s#438176726335.cirruscloud.click#$(echo ${HOSTNAME} | awk -F '.' '{print $1}').438176726335.cirruscloud.click#" /usr/local/bin/resource_record_set.json
+#	sed -i "s#438176726335.cirruscloud.click#ubuntu-ud6.438176726335.cirruscloud.click#" /usr/local/bin/resource_record_set.json
+#else
+#	sed -i "s#438176726335.cirruscloud.click#al2-ud6.438176726335.cirruscloud.click#" /usr/local/bin/resource_record_set.json
+#fi
+sudo systemctl daemon-reload
+sudo systemctl enable assume_role_and_update_ip
+#sudo yum install -y noip
+#aws s3 cp s3://$bucket/noip2/amazon_no-ip2.conf /etc/no-ip2.conf
+#sudo systemctl enable noip
+#sudo systemctl start noip
+
+sudo reboot
+
